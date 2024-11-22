@@ -19,4 +19,4 @@ youtube-transcript-api
 google-api-python-client
 backoff
 openai
-requests
+python-dotenv

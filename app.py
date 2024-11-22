@@ -18,6 +18,10 @@ from threading import Lock
 from functools import lru_cache
 import backoff
 from transcript_processor import batch_process_transcripts
+from dotenv import load_dotenv
+
+# .env dosyasını yükle
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,6 +30,12 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'default-secret-key')
 YOUTUBE_API_KEY = os.environ.get('YOUTUBE_API_KEY')
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+
+# OpenAI API anahtarını kontrol et
+if not OPENAI_API_KEY:
+    logger.error("OpenAI API anahtarı bulunamadı!")
+    raise ValueError("OpenAI API anahtarı tanımlanmamış")
 
 # Constants
 PLAYLIST_FETCH_TIMEOUT = 30  # seconds
@@ -385,4 +395,4 @@ def create_error_response(message, status_code=400):
     return response
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)

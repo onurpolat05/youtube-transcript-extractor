@@ -473,7 +473,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             console.error('Progress check error:', error);
                             clearInterval(progressInterval);
                         }
-                    }, 500);
+                    }, 5000);
 
                     // Start processing
                     processedContent = await processTranscripts(selectedVideos, selectedStyle);

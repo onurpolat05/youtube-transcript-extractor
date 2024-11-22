@@ -7,14 +7,19 @@ from functools import wraps
 import backoff
 import re
 from prompt_templates import get_template
+from dotenv import load_dotenv
 
-# the newest OpenAI model is "gpt-4o" which was released May 13, 2024.
-# do not change this unless explicitly requested by the user
-openai = OpenAI()
+# .env dosyasını yükle
+load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# API anahtarını doğrudan .env'den oku ve OpenAI client'a ver
+client = OpenAI(
+    api_key=os.getenv('OPENAI_API_KEY', None)  # None varsayılan değer olarak
+)
 
 # Constants for rate limiting
 RATE_LIMIT_DELAY = 10  # seconds between requests
@@ -110,7 +115,7 @@ def process_transcript(transcript_text, style="default"):
 
         template = get_template(style)
         
-        response = openai.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {
@@ -137,6 +142,9 @@ def batch_process_transcripts(transcripts, style="default"):
     """Process multiple transcripts with OpenAI with improved error handling and rate limiting."""
     if not transcripts or not isinstance(transcripts, list):
         raise ValueError("Invalid transcripts input: must be a non-empty list")
+
+    if not client.api_key:
+        raise ValueError("OpenAI API anahtarı bulunamadı!")
 
     results = []
     for transcript in transcripts:
