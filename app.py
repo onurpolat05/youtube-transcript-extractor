@@ -20,7 +20,7 @@ import backoff
 from transcript_processor import batch_process_transcripts
 from dotenv import load_dotenv
 
-# .env dosyasını yükle
+# Load .env file
 load_dotenv()
 
 # Configure logging
@@ -32,10 +32,10 @@ app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'default-secret-key')
 YOUTUBE_API_KEY = os.environ.get('YOUTUBE_API_KEY')
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
-# OpenAI API anahtarını kontrol et
+# OpenAI API key control
 if not OPENAI_API_KEY:
-    logger.error("OpenAI API anahtarı bulunamadı!")
-    raise ValueError("OpenAI API anahtarı tanımlanmamış")
+    logger.error("OpenAI API key not found!")
+    raise ValueError("OpenAI API key is not configured")
 
 # Constants
 PLAYLIST_FETCH_TIMEOUT = 30  # seconds
