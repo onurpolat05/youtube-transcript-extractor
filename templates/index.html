@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12">
+        <div id="logs-section" class="container mt-3">
+            <div class="card">
+                <div class="card-header" data-bs-toggle="collapse" data-bs-target="#logsContent" style="cursor: pointer;">
+                    <i class="fas fa-chevron-down me-2"></i> View Processing Logs
+                </div>
+                <div id="logsContent" class="collapse">
+                    <div class="card-body">
+                        <pre id="process-logs" class="logs-content"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <form id="transcript-form" class="mb-4">
+            <div class="mb-3">
+                <label for="youtube-url" class="form-label">Enter YouTube Video URL</label>
+                <input type="url" class="form-control url-input" id="youtube-url" 
+                       placeholder="https://www.youtube.com/watch?v=..." required>
+                <div class="invalid-feedback">
+                    Please enter a valid YouTube URL
+                </div>
+            </div>
+            <button type="submit" class="btn btn-youtube">Get Content</button>
+        </form>
+
+        <div id="error-message" class="error-message" role="alert"></div>
+        
+        <img src="{{ url_for('static', filename='img/loading.svg') }}" 
+             alt="Loading..." id="loading-spinner" class="loading-spinner">
+
+        <div id="transcript-container" class="transcript-container" style="display: none;">
+            <div class="transcript-text"></div>
+        </div>
+
+        <div id="playlist-container" class="playlist-container" style="display: none;"></div>
+
+        <button id="download-button" class="btn btn-youtube mt-3" style="display: none;">
+            Download Transcript
+        </button>
+    </div>
+</div>
+{% endblock %}
