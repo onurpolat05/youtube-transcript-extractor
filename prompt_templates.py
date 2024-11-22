@@ -124,5 +124,35 @@ TEMPLATES = {
 }
 
 def get_template(style="default"):
-    """Get the prompt template for the specified style."""
+    """
+    Get the right template for processing YouTube transcripts based on what you need.
+    
+    This function helps customize how we process video transcripts. Each template tells
+    OpenAI how to analyze and format the transcript differently.
+    
+    Available styles:
+    - "default": Basic cleanup and analysis
+    - "academic": Focus on research and educational content
+    - "technical": Focus on technical details and code examples
+    - "business": Focus on business insights and market analysis
+    
+    Each template will:
+    1. Format the text to be more readable
+    2. Create a summary
+    3. Generate relevant tags
+    4. Extract key points
+    5. Add style-specific analysis (e.g., code snippets for technical, market insights for business)
+    
+    Args:
+        style (str, optional): The type of analysis you want. Defaults to "default"
+    
+    Returns:
+        dict: A template containing:
+            - system_prompt: Instructions for OpenAI
+            - response_format: How the response should be structured
+    
+    Example:
+        >>> template = get_template("technical")
+        >>> print(template["system_prompt"])  # Shows technical analysis instructions
+    """
     return TEMPLATES.get(style, TEMPLATES["default"])

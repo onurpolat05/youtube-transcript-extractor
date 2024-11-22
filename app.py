@@ -52,7 +52,31 @@ response_cache = {}
 cache_lock = Lock()
 
 def validate_youtube_url(url):
-    """Validate YouTube URL format."""
+    """
+    Check if a given URL is a valid YouTube URL.
+    
+    This function checks if a URL is a valid YouTube URL by:
+    1. Checking if it matches common YouTube URL patterns (watch, shorts, live, etc.)
+    2. Removing any extra parameters from the URL
+    3. Verifying the basic structure is correct
+    
+    For example, these are valid URLs:
+    - https://www.youtube.com/watch?v=dQw4w9WgXcQ
+    - https://youtu.be/dQw4w9WgXcQ
+    - https://youtube.com/shorts/j9rZxAF3C0I
+    
+    Args:
+        url (str): The URL you want to check. Should be a complete YouTube URL.
+    
+    Returns:
+        bool: True if it's a valid YouTube URL, False if it's not.
+        
+    Example:
+        >>> validate_youtube_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        True
+        >>> validate_youtube_url("https://notyoutube.com/watch?v=123")
+        False
+    """
     patterns = [
         r'^((?:https?:)?\/\/)?((?:www|m)\.)?youtube\.com\/watch\?v=[\w-]{11}',
         r'^((?:https?:)?\/\/)?((?:www|m)\.)?youtube\.com\/shorts\/[\w-]{11}',
@@ -65,7 +89,17 @@ def validate_youtube_url(url):
     return any(bool(re.match(pattern, url)) for pattern in patterns)
 
 def extract_playlist_id(url):
-    """Extract playlist ID from YouTube URL."""
+    """
+    Extract the playlist ID from a given YouTube URL if present.
+    
+    This function searches for a playlist ID within the provided YouTube URL using a regular expression. If a playlist ID is found, it is returned; otherwise, the function returns None.
+    
+    Args:
+        url (str): The YouTube URL containing the playlist ID.
+    
+    Returns:
+        str or None: The extracted playlist ID if found, otherwise None.
+    """
     pattern = r'(?:youtube\.com\/playlist\?list=)([\w-]+)'
     match = re.search(pattern, url)
     return match.group(1) if match else None
@@ -77,7 +111,22 @@ def extract_playlist_id(url):
     giveup=lambda e: isinstance(e, HttpError) and e.resp.status not in [429, 500, 503]
 )
 def fetch_playlist_videos(playlist_id):
-    """Fetch video details from a YouTube playlist with rate limiting and retries."""
+    """
+    Fetch video details from a YouTube playlist with rate limiting and retries.
+    
+    This function interacts with the YouTube Data API to retrieve details of videos within a specified playlist. It handles rate limiting by introducing delays between requests and retries in case of recoverable errors. The function stops fetching if a timeout is reached or the maximum number of playlist items is fetched.
+    
+    Args:
+        playlist_id (str): The ID of the YouTube playlist to fetch videos from.
+    
+    Returns:
+        list: A list of dictionaries, each containing details of a video such as title, video ID, and thumbnail URL.
+    
+    Raises:
+        ValueError: If the YouTube API key is missing or if the playlist is inaccessible.
+        TimeoutError: If the playlist fetch operation exceeds the defined timeout.
+        Exception: For any other unexpected errors during the fetch process.
+    """
     if not YOUTUBE_API_KEY:
         logger.error("YouTube API key is missing")
         raise ValueError("YouTube API key is not configured")
@@ -150,12 +199,26 @@ def fetch_playlist_videos(playlist_id):
 
 @app.route('/')
 def index():
-    """Render the main page."""
+    """
+    Render the main page of the application.
+    
+    This function handles the root route ('/') and returns the rendered HTML template for the main page, which likely contains the UI for interacting with the application.
+    
+    Returns:
+        str: Rendered HTML content for the main page.
+    """
     return render_template('index.html')
 
 @app.route('/get_playlist', methods=['POST'])
 def get_playlist():
-    """Handle playlist fetching request."""
+    """
+    Handle playlist fetching requests sent via POST.
+    
+    This endpoint processes JSON-formatted POST requests containing a YouTube URL. It validates the URL, extracts the playlist ID, fetches video details from the playlist, and returns a JSON response with the videos' information or an appropriate error message.
+    
+    Returns:
+        Response: A Flask JSON response indicating success with video data or an error message with corresponding HTTP status code.
+    """
     try:
         if not request.is_json:
             return create_error_response("Request must be JSON", 415)
@@ -202,7 +265,40 @@ def get_playlist():
 
 @app.route('/download_transcript_batch', methods=['POST'])
 def download_transcript_batch_route():
-    """Handle batch transcript download requests with processing style selection."""
+    """
+    Download and process transcripts for multiple YouTube videos at once.
+    
+    What this function does:
+    1. Takes a list of YouTube video IDs from a POST request
+    2. Downloads the transcript for each video
+    3. Gets the video titles from YouTube
+    4. Processes each transcript using OpenAI
+    5. Tracks the progress of each download
+    6. Creates a formatted text file with all results
+    
+    The process happens in stages:
+    - 0%: Starting download
+    - 50%: Transcript downloaded
+    - 75%: OpenAI processing done
+    - 100%: Everything complete
+    
+    Example POST request:
+    {
+        "video_ids": ["abc123", "xyz789"],
+        "style": "technical"  // optional, defaults to "default"
+    }
+    
+    Returns:
+        File: A text file containing all processed transcripts
+        or
+        JSON: An error message if something goes wrong
+    
+    Common errors:
+    - No video IDs provided
+    - Invalid video IDs
+    - Transcripts not available
+    - Processing errors
+    """
     try:
         logger.info("Starting batch transcript download request")
         if not request.is_json:
@@ -356,7 +452,17 @@ def download_transcript_batch_route():
 
 @app.route('/download_progress', methods=['POST'])
 def get_download_progress():
-    """Get the download progress for specified video IDs."""
+    """
+    Retrieve the download progress for specified video IDs.
+    
+    This endpoint processes POST requests containing a list of video IDs and returns the current download progress status for each video. It ensures thread-safe access to the progress tracking data.
+    
+    Args:
+        video_ids (list): List of video IDs to check progress for.
+    
+    Returns:
+        Response: A Flask JSON response containing the progress status for each requested video ID.
+    """
     try:
         if not request.is_json:
             return create_error_response("Request must be JSON", 415)
@@ -382,7 +488,18 @@ def get_download_progress():
         return create_error_response("An unexpected error occurred", 500)
 
 def create_error_response(message, status_code=400):
-    """Create a standardized error response."""
+    """
+    Create a standardized error response for API endpoints.
+    
+    This helper function generates a JSON-formatted error response with the provided message and HTTP status code. It logs the error message for debugging purposes.
+    
+    Args:
+        message (str): The error message to include in the response.
+        status_code (int, optional): The HTTP status code to return. Defaults to 400.
+    
+    Returns:
+        Response: A Flask JSON response containing the error message and status.
+    """
     logger.error(f"Creating error response: {message} (status: {status_code})")
     response = make_response(
         jsonify({
