@@ -4,6 +4,8 @@ processed_urls.txt
 
 # Env
 .env
+.env.*
+!.env.example
 
 # Editors
 .project
@@ -94,10 +96,6 @@ pip-wheel-metadata/
 venv
 
 # Project specific
-.env.local
-.env.development
-.env.test
-.env.production
 *.pyc
 .pytest_cache/
 .coverage
@@ -108,10 +106,6 @@ htmlcov/
 *.pot
 instance/
 .webassets-cache
-.env.local
-.python-version
-
-# OpenAI and YouTube API credentials
 youtube_credentials.json
 openai_credentials.json
 

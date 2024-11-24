@@ -14,9 +14,17 @@ trafilatura
 email-validator
 flask
 flask-sqlalchemy
-psycopg2-binary
 youtube-transcript-api
 google-api-python-client
 backoff
 openai
 python-dotenv
+
+# Development dependencies
+pytest
+black
+flake8
+mypy
+isort
+pre-commit
+pytest-cov
