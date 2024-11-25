@@ -95,6 +95,28 @@ pip-log.txt
 pip-wheel-metadata/
 venv
 
+# Python virtual environment
+venv/
+ENV/
+env/
+.venv/
+.env/
+.Python
+pyvenv.cfg
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*;
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
 # Project specific
 *.pyc
 .pytest_cache/
