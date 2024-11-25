@@ -1,17 +1,18 @@
 # YouTube Transcript Extractor
 
-## 🚀 Overview
+## Overview
 
 A Flask-based web application designed for YouTube transcript extraction and analysis. This tool leverages OpenAI's API capabilities to transform video transcripts into actionable insights and summaries.
 
-## 🎯 Core Features
+## Core Features
 
 - **Transcript Extraction:** Process YouTube videos and playlists
 - **AI-Powered Analysis:** Generate summaries using OpenAI
 - **Progress Tracking:** Real-time monitoring of transcript processing
 - **Batch Processing:** Handle multiple videos simultaneously
+- **Video Metadata:** Display video titles and publish dates (dd.mm.yyyy format)
 
-## 🛠 Tech Stack
+## Tech Stack
 
 ### Backend
 - **Python:** 3.8+
@@ -25,13 +26,13 @@ A Flask-based web application designed for YouTube transcript extraction and ana
   - `python-dotenv`: Environment variable management
   - Other dependencies listed in `requirements.txt`
 
-## 📋 Prerequisites
+## Prerequisites
 
 - Python 3.8 or higher
 - YouTube Data API access (Get it from [Google Cloud Console](https://console.cloud.google.com/))
 - OpenAI API key (Get it from [OpenAI Platform](https://platform.openai.com/api-keys))
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Environment Setup
 
@@ -106,7 +107,7 @@ The application will be available at `http://localhost:5000`
 
 - **Other Operating Systems:** If port 5000 is already in use by another application, you can similarly specify a different port using the commands above.
 
-## 📝 Usage
+## Usage
 
 1. Access the web interface at `http://localhost:5000`
 2. Input YouTube video URLs or playlist URLs
@@ -118,6 +119,6 @@ The application will be available at `http://localhost:5000`
 - Keep your API keys secure and rotate them periodically
 - Monitor your API usage to avoid exceeding quotas
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

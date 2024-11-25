@@ -169,7 +169,8 @@ def fetch_playlist_videos(playlist_id):
                         video_data = {
                             'title': snippet['title'],
                             'video_id': snippet['resourceId']['videoId'],
-                            'thumbnail': snippet['thumbnails']['default']['url']
+                            'thumbnail': snippet['thumbnails']['default']['url'],
+                            'publishedAt': snippet['publishedAt']  # Add publish date
                         }
                         videos.append(video_data)
                         items_fetched += 1
@@ -325,22 +326,30 @@ def download_transcript_batch_route():
                 youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
                 video_response = youtube.videos().list(
                     part='snippet',
-                    id=video_id,
-                    fields='items(snippet(title))'
+                    id=video_id
                 ).execute()
-                
-                video_title = video_response['items'][0]['snippet']['title']
-                
+
+                if 'items' in video_response and video_response['items']:
+                    video_info = video_response['items'][0]['snippet']
+                    title = video_info['title']
+                    publishedAt = video_info['publishedAt']
+                else:
+                    title = f"Video {video_id}"
+                    publishedAt = None
+
                 logger.info(f"Fetching transcript for video: {video_id}")
                 transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
                 formatter = TextFormatter()
-                formatted_transcript = formatter.format_transcript(transcript_list)
+                transcript_text = formatter.format_transcript(transcript_list)
                 
-                transcripts.append({
+                transcript_data = {
                     'video_id': video_id,
-                    'title': video_title,
-                    'transcript': formatted_transcript
-                })
+                    'title': title,
+                    'publishedAt': publishedAt,
+                    'transcript': transcript_text
+                }
+                
+                transcripts.append(transcript_data)
                 
                 with progress_lock:
                     download_progress[video_id] = 50  # 50% after transcript download
@@ -382,6 +391,7 @@ def download_transcript_batch_route():
                     output.extend([
                         f"Video Title: {result['title']}",
                         f"Video ID: {result['video_id']}",
+                        f"Published At: {result['publishedAt']}",
                         f"Processing Style: {result['style']}",
                         "-" * 80,
                         "Summary:",

@@ -349,6 +349,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
 
                     const videoUrl = `https://www.youtube.com/watch?v=${video.video_id}`;
+                    const publishDate = video.publishedAt ? new Date(video.publishedAt).toLocaleDateString('tr-TR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric'
+                    }) : 'Date not available';
                     const videoItem = document.createElement('div');
                     videoItem.className = 'video-item';
                     videoItem.innerHTML = `
@@ -356,6 +361,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <span class="video-number">${index + 1}.</span>
                         <div class="video-info">
                             <div class="video-title">${video.title}</div>
+                            <div class="video-date">${publishDate}</div>
                             <div class="video-url">${videoUrl}</div>
                             <button class="btn btn-sm btn-youtube copy-url" data-url="${videoUrl}">
                                 Copy URL

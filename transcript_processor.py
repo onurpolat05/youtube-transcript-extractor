@@ -153,49 +153,39 @@ def extract_field(text, field_name, is_list=False):
     max_tries=MAX_RETRIES,
     giveup=lambda e: isinstance(e, KeyError)
 )
-def process_transcript(transcript_text, style="default"):
+def process_transcript(transcript_text, video_title=None, video_id=None, publish_date=None, style="default"):
     """
-    Process a YouTube video transcript using OpenAI to make it more readable and extract key information.
-    
-    This function does several things:
-    1. Takes the raw transcript text and sends it to OpenAI
-    2. Formats the text to be more readable (fixes grammar, adds paragraphs, etc.)
-    3. Creates a summary of the content
-    4. Identifies important topics and tags
-    5. Lists key points from the video
-    
-    The 'style' parameter changes how the transcript is processed:
-    - "default": Basic formatting and analysis
-    - "academic": Focus on research and scholarly content
-    - "technical": Focus on technical details and code
-    - "business": Focus on business insights and strategy
+    Process a video transcript using OpenAI's API.
     
     Args:
-        transcript_text (str): The raw transcript text from the YouTube video
-        style (str, optional): How you want the transcript processed. Defaults to "default"
+        transcript_text (str): The transcript text to process
+        video_title (str, optional): The title of the video
+        video_id (str, optional): The ID of the video
+        publish_date (str, optional): The publish date of the video
+        style (str, optional): The processing style to use. Defaults to "default"
     
     Returns:
-        dict: A dictionary containing:
-            - formatted_text: The cleaned up transcript
-            - summary: A brief summary of the content
-            - tags: List of relevant topics
-            - key_points: Main points from the video
-            - Additional fields based on the style chosen
-    
-    Raises:
-        ValueError: If the transcript text is empty or invalid
-        Exception: If there's an error processing with OpenAI
-    
-    Example:
-        >>> result = process_transcript("Raw video transcript...", style="technical")
-        >>> print(result['summary'])
-        'A technical discussion about Python programming...'
+        dict: Processed transcript data including formatted text, summary, and analysis
     """
     try:
-        if not transcript_text or not isinstance(transcript_text, str):
+        if not transcript_text or not transcript_text.strip():
             raise ValueError("Invalid transcript text provided")
 
         template = get_template(style)
+        
+        # Create a context string that includes video metadata
+        context = ""
+        if video_title:
+            context += f"Video Title: {video_title}\n"
+        if publish_date:
+            context += f"Published: {publish_date}\n"
+        if video_id:
+            context += f"Video ID: {video_id}\n"
+        if context:
+            context += "\nTranscript:\n"
+        
+        # Combine context with transcript
+        full_text = context + transcript_text
         
         response = client.chat.completions.create(
             model=os.getenv('OPENAI_MODEL', 'gpt-4o-mini-2024-07-18'),
@@ -204,7 +194,7 @@ def process_transcript(transcript_text, style="default"):
                     "role": "system",
                     "content": template["system_prompt"]
                 },
-                {"role": "user", "content": transcript_text}
+                {"role": "user", "content": full_text}
             ],
             response_format=template["response_format"]
         )
@@ -221,44 +211,29 @@ def process_transcript(transcript_text, style="default"):
         raise Exception(f"Failed to process transcript: {str(e)}")
 
 def batch_process_transcripts(transcripts, style="default"):
-    """
-    Process multiple transcripts with OpenAI, incorporating improved error handling and rate limiting.
-    
-    This function iterates over a list of transcripts, processing each one using the 'process_transcript' function. It validates input data, manages rate limits, handles exceptions for individual transcripts, and compiles the results. The function raises an exception if all transcript processing attempts fail.
-    
-    Args:
-        transcripts (list): A list of transcript dictionaries to process. Each dictionary should contain 'video_id', 'title', and 'transcript' keys.
-        style (str, optional): The processing style to apply. Defaults to "default".
-    
-    Returns:
-        list: A list of result dictionaries for each processed transcript, indicating success or failure and containing processed data or error messages.
-    
-    Raises:
-        ValueError: If the input transcripts are invalid or the OpenAI API key is missing.
-        Exception: If all transcript processing attempts fail.
-    """
-    if not transcripts or not isinstance(transcripts, list):
-        raise ValueError("Invalid transcripts input: must be a non-empty list")
-
-    if not client.api_key:
-        raise ValueError("OpenAI API anahtarı bulunamadı!")
-
+    """Process multiple transcripts in batch."""
     results = []
-    for transcript in transcripts:
-        try:
-            # Input validation
+    try:
+        for transcript in transcripts:
             if not isinstance(transcript, dict):
-                raise ValueError(f"Invalid transcript format for video {transcript.get('video_id', 'unknown')}")
+                raise TypeError(f"Invalid transcript format for {transcript}")
             
             if 'transcript' not in transcript or 'video_id' not in transcript:
                 raise KeyError(f"Missing required fields for video {transcript.get('video_id', 'unknown')}")
 
             # Process transcript with rate limiting and retries
-            processed = process_transcript(transcript['transcript'], style)
+            processed = process_transcript(
+                transcript['transcript'],
+                video_title=transcript.get('title'),
+                video_id=transcript['video_id'],
+                publish_date=transcript.get('publishedAt'),
+                style=style
+            )
             
             results.append({
                 'video_id': transcript['video_id'],
                 'title': transcript.get('title', 'Unknown Title'),
+                'publish_date': transcript.get('publishedAt', 'Unknown Date'),
                 'formatted_text': processed.get('formatted_text', ''),
                 'summary': processed.get('summary', ''),
                 'tags': processed.get('tags', []),
@@ -273,22 +248,23 @@ def batch_process_transcripts(transcripts, style="default"):
                 'success': True
             })
             
-        except (ValueError, KeyError) as e:
-            logger.error(f"Validation error for video {transcript.get('video_id', 'unknown')}: {e}")
-            results.append({
-                'video_id': transcript.get('video_id', 'unknown'),
-                'error': str(e),
-                'success': False,
-                'error_type': 'validation_error'
-            })
-        except Exception as e:
-            logger.error(f"Processing error for video {transcript.get('video_id', 'unknown')}: {e}")
-            results.append({
-                'video_id': transcript.get('video_id', 'unknown'),
-                'error': str(e),
-                'success': False,
-                'error_type': 'processing_error'
-            })
+        return results
+    except (ValueError, KeyError) as e:
+        logger.error(f"Validation error for video {transcript.get('video_id', 'unknown')}: {e}")
+        results.append({
+            'video_id': transcript.get('video_id', 'unknown'),
+            'error': str(e),
+            'success': False,
+            'error_type': 'validation_error'
+        })
+    except Exception as e:
+        logger.error(f"Processing error for video {transcript.get('video_id', 'unknown')}: {e}")
+        results.append({
+            'video_id': transcript.get('video_id', 'unknown'),
+            'error': str(e),
+            'success': False,
+            'error_type': 'processing_error'
+        })
 
     if not any(result.get('success', False) for result in results):
         logger.error("All transcript processing attempts failed")
