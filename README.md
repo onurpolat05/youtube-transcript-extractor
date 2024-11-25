@@ -67,7 +67,7 @@ Note: Replace the placeholder values with your actual API keys:
 
 ### 3. Running the Application
 
-You have two options to run the application:
+The application runs on port 5000 by default. Here are the ways to start it:
 
 #### Option 1: Using Python directly
 ```bash
@@ -92,6 +92,19 @@ flask run
 ```
 
 The application will be available at `http://localhost:5000`
+
+#### Troubleshooting Port Issues
+
+- **MacOS Users:** Port 5000 might be used by AirPlay Receiver. If you see a "Port in use" error, you can:
+  ```bash
+  # Option 1: Use a different port
+  flask run --port=5001
+  # or with Python directly
+  python app.py --port=5001
+  ```
+  Or disable AirPlay Receiver in System Preferences -> General -> AirDrop & Handoff
+
+- **Other Operating Systems:** If port 5000 is already in use by another application, you can similarly specify a different port using the commands above.
 
 ## 📝 Usage
 

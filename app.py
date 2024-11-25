@@ -19,6 +19,7 @@ from functools import lru_cache
 import backoff
 from transcript_processor import batch_process_transcripts
 from dotenv import load_dotenv
+import argparse
 
 # Load .env file
 load_dotenv()
@@ -511,5 +512,13 @@ def create_error_response(message, status_code=400):
     response.headers['Content-Type'] = 'application/json'
     return response
 
+# Note: On MacOS, port 5000 is commonly used by AirPlay Receiver.
+# If you encounter a "Port 5000 is in use" error, you can either:
+# 1. Disable AirPlay Receiver in System Preferences -> General -> AirDrop & Handoff
+# 2. Or use a different port by passing --port argument when running the app
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    parser = argparse.ArgumentParser(description='YouTube Transcript Extractor')
+    parser.add_argument('--port', type=int, default=5000, help='Port to run the application on (default: 5000)')
+    args = parser.parse_args()
+    
+    app.run(host='0.0.0.0', port=args.port, debug=False)
