@@ -8,6 +8,7 @@ import backoff
 import re
 from prompt_templates import get_template
 from dotenv import load_dotenv
+from datetime import datetime
 
 # .env dosyasını yükle
 load_dotenv()
@@ -187,16 +188,18 @@ def process_transcript(transcript_text, video_title=None, video_id=None, publish
         # Combine context with transcript
         full_text = context + transcript_text
         
+        model_name = os.getenv('OPENAI_MODEL', 'gpt-4o-mini-2024-07-18')
+        logger.info(f"Using OpenAI model: {model_name}")
+        
         response = client.chat.completions.create(
-            model=os.getenv('OPENAI_MODEL', 'gpt-4o-mini-2024-07-18'),
+            model=model_name,
             messages=[
                 {
                     "role": "system",
                     "content": template["system_prompt"]
                 },
                 {"role": "user", "content": full_text}
-            ],
-            response_format=template["response_format"]
+            ]
         )
         
         response_text = response.choices[0].message.content
@@ -214,6 +217,7 @@ def batch_process_transcripts(transcripts, style="default"):
     """Process multiple transcripts in batch."""
     results = []
     try:
+        # Input validation
         for transcript in transcripts:
             if not isinstance(transcript, dict):
                 raise TypeError(f"Invalid transcript format for {transcript}")
@@ -221,56 +225,79 @@ def batch_process_transcripts(transcripts, style="default"):
             if 'transcript' not in transcript or 'video_id' not in transcript:
                 raise KeyError(f"Missing required fields for video {transcript.get('video_id', 'unknown')}")
 
-            # Process transcript with rate limiting and retries
-            processed = process_transcript(
-                transcript['transcript'],
-                video_title=transcript.get('title'),
-                video_id=transcript['video_id'],
-                publish_date=transcript.get('publishedAt'),
-                style=style
-            )
-            
-            results.append({
-                'video_id': transcript['video_id'],
-                'title': transcript.get('title', 'Unknown Title'),
-                'publish_date': transcript.get('publishedAt', 'Unknown Date'),
-                'formatted_text': processed.get('formatted_text', ''),
-                'summary': processed.get('summary', ''),
-                'tags': processed.get('tags', []),
-                'key_points': processed.get('key_points', []),
-                'full_transcript': transcript['transcript'],  # Original unformatted text
-                'style': style,
-                'research_implications': processed.get('research_implications', []),
-                'code_snippets': processed.get('code_snippets', []),
-                'technical_concepts': processed.get('technical_concepts', []),
-                'market_insights': processed.get('market_insights', []),
-                'strategic_implications': processed.get('strategic_implications', []),
-                'success': True
-            })
-            
+        # Sort transcripts by date (newest first), handling None values and invalid dates
+        def get_date(transcript):
+            try:
+                if not transcript.get('publishedAt'):
+                    return datetime.min
+                date_str = transcript['publishedAt'].replace('Z', '+00:00')
+                return datetime.fromisoformat(date_str)
+            except (ValueError, TypeError, AttributeError):
+                return datetime.min
+
+        sorted_transcripts = sorted(
+            transcripts,
+            key=get_date,
+            reverse=True
+        )
+
+        # Process each transcript with rate limiting and retries
+        for transcript in sorted_transcripts:
+            try:
+                processed = process_transcript(
+                    transcript['transcript'],
+                    video_title=transcript.get('title'),
+                    video_id=transcript['video_id'],
+                    publish_date=transcript.get('publishedAt'),
+                    style=style
+                )
+                
+                results.append({
+                    'video_id': transcript['video_id'],
+                    'title': transcript.get('title', 'Unknown Title'),
+                    'publish_date': transcript.get('publishedAt', 'Unknown Date'),
+                    'formatted_text': processed.get('formatted_text', ''),
+                    'summary': processed.get('summary', ''),
+                    'tags': processed.get('tags', []),
+                    'key_points': processed.get('key_points', []),
+                    'full_transcript': transcript['transcript'],
+                    'style': style,
+                    'research_implications': processed.get('research_implications', []),
+                    'code_snippets': processed.get('code_snippets', []),
+                    'technical_concepts': processed.get('technical_concepts', []),
+                    'market_insights': processed.get('market_insights', []),
+                    'strategic_implications': processed.get('strategic_implications', []),
+                    'success': True
+                })
+            except Exception as e:
+                error_info = handle_api_error(e, transcript.get('video_id', 'unknown'))
+                logger.error(f"Error processing transcript: {error_info}")
+                results.append({
+                    'video_id': transcript.get('video_id', 'unknown'),
+                    'error': str(e),
+                    'success': False,
+                    'error_type': 'processing_error'
+                })
+                continue
+
+        if not any(result.get('success', False) for result in results):
+            logger.error("All transcript processing attempts failed")
+            raise Exception("Failed to process any transcripts successfully")
+
         return results
+
     except (ValueError, KeyError) as e:
-        logger.error(f"Validation error for video {transcript.get('video_id', 'unknown')}: {e}")
+        logger.error(f"Validation error: {e}")
         results.append({
-            'video_id': transcript.get('video_id', 'unknown'),
+            'video_id': 'unknown',
             'error': str(e),
             'success': False,
             'error_type': 'validation_error'
         })
+        return results
     except Exception as e:
-        logger.error(f"Processing error for video {transcript.get('video_id', 'unknown')}: {e}")
-        results.append({
-            'video_id': transcript.get('video_id', 'unknown'),
-            'error': str(e),
-            'success': False,
-            'error_type': 'processing_error'
-        })
-
-    if not any(result.get('success', False) for result in results):
-        logger.error("All transcript processing attempts failed")
-        raise Exception("Failed to process any transcripts successfully")
-
-    return results
+        logger.error(f"Error in batch processing: {str(e)}")
+        raise
 
 def handle_api_error(error, video_id):
     """

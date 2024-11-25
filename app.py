@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify, make_response
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 from youtube_transcript_api.formatters import TextFormatter
 import re
 import os
@@ -21,7 +22,6 @@ from transcript_processor import batch_process_transcripts
 from dotenv import load_dotenv
 import argparse
 
-# Load .env file
 load_dotenv()
 
 # Configure logging
@@ -153,8 +153,9 @@ def fetch_playlist_videos(playlist_id):
             
             logger.info(f"Fetching page of playlist items. Token: {next_page_token}")
             try:
+                # First get playlist items
                 playlist_response = youtube.playlistItems().list(
-                    part='snippet',
+                    part='snippet,contentDetails',
                     playlistId=playlist_id,
                     maxResults=50,
                     pageToken=next_page_token
@@ -163,14 +164,34 @@ def fetch_playlist_videos(playlist_id):
                 if 'items' not in playlist_response:
                     raise ValueError("Invalid playlist data received from YouTube")
 
+                # Get video IDs for detailed info
+                video_ids = [item['snippet']['resourceId']['videoId'] 
+                           for item in playlist_response['items']]
+
+                # Get detailed video information
+                if video_ids:
+                    videos_response = youtube.videos().list(
+                        part='snippet',
+                        id=','.join(video_ids)
+                    ).execute()
+
+                    # Create a mapping of video IDs to their details
+                    video_details = {
+                        item['id']: item['snippet'] 
+                        for item in videos_response.get('items', [])
+                    }
+
                 for item in playlist_response['items']:
                     try:
                         snippet = item['snippet']
+                        video_id = snippet['resourceId']['videoId']
+                        video_detail = video_details.get(video_id, {})
+                        
                         video_data = {
                             'title': snippet['title'],
-                            'video_id': snippet['resourceId']['videoId'],
+                            'video_id': video_id,
                             'thumbnail': snippet['thumbnails']['default']['url'],
-                            'publishedAt': snippet['publishedAt']  # Add publish date
+                            'publishedAt': video_detail.get('publishedAt', snippet['publishedAt'])
                         }
                         videos.append(video_data)
                         items_fetched += 1
@@ -354,12 +375,12 @@ def download_transcript_batch_route():
                 with progress_lock:
                     download_progress[video_id] = 50  # 50% after transcript download
                     
-            except YouTubeTranscriptApi.TranscriptsDisabled:
+            except TranscriptsDisabled:
                 logger.error(f"Transcripts are disabled for video {video_id}")
                 with progress_lock:
                     download_progress[video_id] = -1
                 continue
-            except YouTubeTranscriptApi.NoTranscriptFound:
+            except NoTranscriptFound:
                 logger.error(f"No transcript found for video {video_id}")
                 with progress_lock:
                     download_progress[video_id] = -1
@@ -391,7 +412,7 @@ def download_transcript_batch_route():
                     output.extend([
                         f"Video Title: {result['title']}",
                         f"Video ID: {result['video_id']}",
-                        f"Published At: {result['publishedAt']}",
+                        f"Published At: {result.get('publishedAt', 'Not available')}",
                         f"Processing Style: {result['style']}",
                         "-" * 80,
                         "Summary:",
