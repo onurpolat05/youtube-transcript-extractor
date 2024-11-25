@@ -18,7 +18,8 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from functools import lru_cache
 import backoff
-from transcript_processor import batch_process_transcripts
+from transcript_processor import (process_transcript, batch_process_transcripts,
+                              update_progress, format_date)
 from dotenv import load_dotenv
 import argparse
 
@@ -350,14 +351,13 @@ def download_transcript_batch_route():
                     id=video_id
                 ).execute()
 
-                if 'items' in video_response and video_response['items']:
-                    video_info = video_response['items'][0]['snippet']
-                    title = video_info['title']
-                    publishedAt = video_info['publishedAt']
-                else:
-                    title = f"Video {video_id}"
-                    publishedAt = None
+                if not video_response.get('items'):
+                    raise ValueError(f"Video {video_id} not found or is not accessible")
 
+                video_data = video_response['items'][0]['snippet']
+                publish_date = video_data.get('publishedAt')  # Get raw date
+                title = video_data['title']
+                
                 logger.info(f"Fetching transcript for video: {video_id}")
                 transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
                 formatter = TextFormatter()
@@ -366,7 +366,7 @@ def download_transcript_batch_route():
                 transcript_data = {
                     'video_id': video_id,
                     'title': title,
-                    'publishedAt': publishedAt,
+                    'publishedAt': publish_date,  # Pass raw date
                     'transcript': transcript_text
                 }
                 
@@ -412,7 +412,7 @@ def download_transcript_batch_route():
                     output.extend([
                         f"Video Title: {result['title']}",
                         f"Video ID: {result['video_id']}",
-                        f"Published At: {result.get('publishedAt', 'Not available')}",
+                        f"Published At: {format_date(result.get('publishedAt', 'Not available'))}",
                         f"Processing Style: {result['style']}",
                         "-" * 80,
                         "Summary:",

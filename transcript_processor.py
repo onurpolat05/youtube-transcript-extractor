@@ -227,6 +227,7 @@ def batch_process_transcripts(transcripts, style="default"):
 
         # Sort transcripts by date (newest first), handling None values and invalid dates
         def get_date(transcript):
+            """Get datetime object from transcript publishedAt field."""
             try:
                 if not transcript.get('publishedAt'):
                     return datetime.min
@@ -255,7 +256,7 @@ def batch_process_transcripts(transcripts, style="default"):
                 results.append({
                     'video_id': transcript['video_id'],
                     'title': transcript.get('title', 'Unknown Title'),
-                    'publish_date': transcript.get('publishedAt', 'Unknown Date'),
+                    'publishedAt': transcript.get('publishedAt'),  # Pass raw date
                     'formatted_text': processed.get('formatted_text', ''),
                     'summary': processed.get('summary', ''),
                     'tags': processed.get('tags', []),
@@ -384,6 +385,66 @@ def format_transcript_output(processed_data):
         Video Title: Example Video
         ...
     """
+    output = []
+    
+    # Add video information
+    output.append(f"Title: {processed_data.get('title', 'Unknown Title')}")
+    output.append(f"Video ID: {processed_data.get('video_id', 'Unknown ID')}")
+    output.append(f"Published: {format_date(processed_data.get('publishedAt', 'Not available'))}\n")
+    
+    # Add summary section
+    output.append("Summary:")
+    output.append(processed_data.get('summary', ''))
+    output.append("\n")
+    
+    # Add key points
+    output.append("Key Points:")
+    for point in processed_data.get('key_points', []):
+        output.append(f"- {point}")
+    output.append("\n")
+    
+    # Add tags
+    output.append("Tags:")
+    for tag in processed_data.get('tags', []):
+        output.append(f"- {tag}")
+    output.append("\n")
+    
+    # Add style-specific sections
+    if 'research_implications' in processed_data:
+        output.append("Research Implications:")
+        for implication in processed_data['research_implications']:
+            output.append(f"- {implication}")
+        output.append("\n")
+    
+    if 'code_snippets' in processed_data:
+        output.append("Code Snippets:")
+        for snippet in processed_data['code_snippets']:
+            output.append(f"- {snippet}")
+        output.append("\n")
+    
+    if 'technical_concepts' in processed_data:
+        output.append("Technical Concepts:")
+        for concept in processed_data['technical_concepts']:
+            output.append(f"- {concept}")
+        output.append("\n")
+    
+    if 'market_insights' in processed_data:
+        output.append("Market Insights:")
+        for insight in processed_data['market_insights']:
+            output.append(f"- {insight}")
+        output.append("\n")
+    
+    if 'strategic_implications' in processed_data:
+        output.append("Strategic Implications:")
+        for implication in processed_data['strategic_implications']:
+            output.append(f"- {implication}")
+        output.append("\n")
+    
+    # Add full formatted transcript
+    output.append("Full Transcript:")
+    output.append(processed_data.get('formatted_text', ''))
+    
+    return "\n".join(output)
 
 def validate_input_data(transcript_data):
     """
@@ -469,3 +530,15 @@ def get_cached_results(video_id):
         ... else:
         ...     print("Need to process video")
     """
+
+def format_date(date_str):
+    """Format a date string consistently throughout the application."""
+    if not date_str or date_str == 'Not available':
+        return 'Not available'
+    try:
+        # Handle ISO format dates with Z or +00:00
+        date_str = date_str.replace('Z', '+00:00')
+        dt = datetime.fromisoformat(date_str)
+        return dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+    except (ValueError, TypeError, AttributeError):
+        return 'Not available'
