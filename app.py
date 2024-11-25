@@ -357,6 +357,7 @@ def download_transcript_batch_route():
                 video_data = video_response['items'][0]['snippet']
                 publish_date = video_data.get('publishedAt')  # Get raw date
                 title = video_data['title']
+                channel_name = video_data.get('channelTitle', 'Unknown Channel')
                 
                 logger.info(f"Fetching transcript for video: {video_id}")
                 transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
@@ -366,7 +367,8 @@ def download_transcript_batch_route():
                 transcript_data = {
                     'video_id': video_id,
                     'title': title,
-                    'publishedAt': publish_date,  # Pass raw date
+                    'channel_name': channel_name,
+                    'publishedAt': publish_date,
                     'transcript': transcript_text
                 }
                 
@@ -412,6 +414,7 @@ def download_transcript_batch_route():
                     output.extend([
                         f"Video Title: {result['title']}",
                         f"Video ID: {result['video_id']}",
+                        f"Channel Name: {result['channel_name']}",
                         f"Published At: {format_date(result.get('publishedAt', 'Not available'))}",
                         f"Processing Style: {result['style']}",
                         "-" * 80,

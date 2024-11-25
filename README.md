@@ -10,7 +10,11 @@ A Flask-based web application designed for YouTube transcript extraction and ana
 - **AI-Powered Analysis:** Generate summaries using OpenAI
 - **Progress Tracking:** Real-time monitoring of transcript processing
 - **Batch Processing:** Handle multiple videos simultaneously
-- **Video Metadata:** Display video titles and publish dates (dd.mm.yyyy format)
+- **Video Metadata:** 
+  - Video titles and IDs
+  - Channel names
+  - Publication dates in standardized UTC format
+  - Graceful handling of missing metadata
 
 ## Tech Stack
 
@@ -65,6 +69,18 @@ Note: Replace the placeholder values with your actual API keys:
 - Get your OpenAI API key from OpenAI Platform
 - Generate a secure random string for FLASK_SECRET_KEY
 - OPENAI_MODEL can be changed to any available OpenAI model (e.g., gpt-3.5-turbo, gpt-4, etc.)
+
+### Output Format
+
+The application generates detailed transcripts with the following information:
+- Video title and ID
+- Channel name
+- Publication date (in YYYY-MM-DD HH:MM:SS UTC format)
+- AI-generated summary
+- Key points and tags
+- Full formatted transcript
+
+Missing information (e.g., publication dates) is handled gracefully with "Not available" placeholders.
 
 ### 3. Running the Application
 

@@ -256,6 +256,7 @@ def batch_process_transcripts(transcripts, style="default"):
                 results.append({
                     'video_id': transcript['video_id'],
                     'title': transcript.get('title', 'Unknown Title'),
+                    'channel_name': transcript.get('channel_name', 'Unknown Channel'),
                     'publishedAt': transcript.get('publishedAt'),  # Pass raw date
                     'formatted_text': processed.get('formatted_text', ''),
                     'summary': processed.get('summary', ''),
@@ -390,6 +391,7 @@ def format_transcript_output(processed_data):
     # Add video information
     output.append(f"Title: {processed_data.get('title', 'Unknown Title')}")
     output.append(f"Video ID: {processed_data.get('video_id', 'Unknown ID')}")
+    output.append(f"Channel: {processed_data.get('channel_name', 'Unknown Channel')}")
     output.append(f"Published: {format_date(processed_data.get('publishedAt', 'Not available'))}\n")
     
     # Add summary section
