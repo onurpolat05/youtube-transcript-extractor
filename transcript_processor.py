@@ -8,6 +8,7 @@ import backoff
 import re
 from prompt_templates import get_template
 from dotenv import load_dotenv
+from datetime import datetime
 
 # .env dosyasını yükle
 load_dotenv()
@@ -153,60 +154,52 @@ def extract_field(text, field_name, is_list=False):
     max_tries=MAX_RETRIES,
     giveup=lambda e: isinstance(e, KeyError)
 )
-def process_transcript(transcript_text, style="default"):
+def process_transcript(transcript_text, video_title=None, video_id=None, publish_date=None, style="default"):
     """
-    Process a YouTube video transcript using OpenAI to make it more readable and extract key information.
-    
-    This function does several things:
-    1. Takes the raw transcript text and sends it to OpenAI
-    2. Formats the text to be more readable (fixes grammar, adds paragraphs, etc.)
-    3. Creates a summary of the content
-    4. Identifies important topics and tags
-    5. Lists key points from the video
-    
-    The 'style' parameter changes how the transcript is processed:
-    - "default": Basic formatting and analysis
-    - "academic": Focus on research and scholarly content
-    - "technical": Focus on technical details and code
-    - "business": Focus on business insights and strategy
+    Process a video transcript using OpenAI's API.
     
     Args:
-        transcript_text (str): The raw transcript text from the YouTube video
-        style (str, optional): How you want the transcript processed. Defaults to "default"
+        transcript_text (str): The transcript text to process
+        video_title (str, optional): The title of the video
+        video_id (str, optional): The ID of the video
+        publish_date (str, optional): The publish date of the video
+        style (str, optional): The processing style to use. Defaults to "default"
     
     Returns:
-        dict: A dictionary containing:
-            - formatted_text: The cleaned up transcript
-            - summary: A brief summary of the content
-            - tags: List of relevant topics
-            - key_points: Main points from the video
-            - Additional fields based on the style chosen
-    
-    Raises:
-        ValueError: If the transcript text is empty or invalid
-        Exception: If there's an error processing with OpenAI
-    
-    Example:
-        >>> result = process_transcript("Raw video transcript...", style="technical")
-        >>> print(result['summary'])
-        'A technical discussion about Python programming...'
+        dict: Processed transcript data including formatted text, summary, and analysis
     """
     try:
-        if not transcript_text or not isinstance(transcript_text, str):
+        if not transcript_text or not transcript_text.strip():
             raise ValueError("Invalid transcript text provided")
 
         template = get_template(style)
         
+        # Create a context string that includes video metadata
+        context = ""
+        if video_title:
+            context += f"Video Title: {video_title}\n"
+        if publish_date:
+            context += f"Published: {publish_date}\n"
+        if video_id:
+            context += f"Video ID: {video_id}\n"
+        if context:
+            context += "\nTranscript:\n"
+        
+        # Combine context with transcript
+        full_text = context + transcript_text
+        
+        model_name = os.getenv('OPENAI_MODEL', 'gpt-4o-mini-2024-07-18')
+        logger.info(f"Using OpenAI model: {model_name}")
+        
         response = client.chat.completions.create(
-            model=os.getenv('OPENAI_MODEL', 'gpt-4o-mini-2024-07-18'),
+            model=model_name,
             messages=[
                 {
                     "role": "system",
                     "content": template["system_prompt"]
                 },
-                {"role": "user", "content": transcript_text}
-            ],
-            response_format=template["response_format"]
+                {"role": "user", "content": full_text}
+            ]
         )
         
         response_text = response.choices[0].message.content
@@ -221,80 +214,92 @@ def process_transcript(transcript_text, style="default"):
         raise Exception(f"Failed to process transcript: {str(e)}")
 
 def batch_process_transcripts(transcripts, style="default"):
-    """
-    Process multiple transcripts with OpenAI, incorporating improved error handling and rate limiting.
-    
-    This function iterates over a list of transcripts, processing each one using the 'process_transcript' function. It validates input data, manages rate limits, handles exceptions for individual transcripts, and compiles the results. The function raises an exception if all transcript processing attempts fail.
-    
-    Args:
-        transcripts (list): A list of transcript dictionaries to process. Each dictionary should contain 'video_id', 'title', and 'transcript' keys.
-        style (str, optional): The processing style to apply. Defaults to "default".
-    
-    Returns:
-        list: A list of result dictionaries for each processed transcript, indicating success or failure and containing processed data or error messages.
-    
-    Raises:
-        ValueError: If the input transcripts are invalid or the OpenAI API key is missing.
-        Exception: If all transcript processing attempts fail.
-    """
-    if not transcripts or not isinstance(transcripts, list):
-        raise ValueError("Invalid transcripts input: must be a non-empty list")
-
-    if not client.api_key:
-        raise ValueError("OpenAI API anahtarı bulunamadı!")
-
+    """Process multiple transcripts in batch."""
     results = []
-    for transcript in transcripts:
-        try:
-            # Input validation
+    try:
+        # Input validation
+        for transcript in transcripts:
             if not isinstance(transcript, dict):
-                raise ValueError(f"Invalid transcript format for video {transcript.get('video_id', 'unknown')}")
+                raise TypeError(f"Invalid transcript format for {transcript}")
             
             if 'transcript' not in transcript or 'video_id' not in transcript:
                 raise KeyError(f"Missing required fields for video {transcript.get('video_id', 'unknown')}")
 
-            # Process transcript with rate limiting and retries
-            processed = process_transcript(transcript['transcript'], style)
-            
-            results.append({
-                'video_id': transcript['video_id'],
-                'title': transcript.get('title', 'Unknown Title'),
-                'formatted_text': processed.get('formatted_text', ''),
-                'summary': processed.get('summary', ''),
-                'tags': processed.get('tags', []),
-                'key_points': processed.get('key_points', []),
-                'full_transcript': transcript['transcript'],  # Original unformatted text
-                'style': style,
-                'research_implications': processed.get('research_implications', []),
-                'code_snippets': processed.get('code_snippets', []),
-                'technical_concepts': processed.get('technical_concepts', []),
-                'market_insights': processed.get('market_insights', []),
-                'strategic_implications': processed.get('strategic_implications', []),
-                'success': True
-            })
-            
-        except (ValueError, KeyError) as e:
-            logger.error(f"Validation error for video {transcript.get('video_id', 'unknown')}: {e}")
-            results.append({
-                'video_id': transcript.get('video_id', 'unknown'),
-                'error': str(e),
-                'success': False,
-                'error_type': 'validation_error'
-            })
-        except Exception as e:
-            logger.error(f"Processing error for video {transcript.get('video_id', 'unknown')}: {e}")
-            results.append({
-                'video_id': transcript.get('video_id', 'unknown'),
-                'error': str(e),
-                'success': False,
-                'error_type': 'processing_error'
-            })
+        # Sort transcripts by date (newest first), handling None values and invalid dates
+        def get_date(transcript):
+            """Get datetime object from transcript publishedAt field."""
+            try:
+                if not transcript.get('publishedAt'):
+                    return datetime.min
+                date_str = transcript['publishedAt'].replace('Z', '+00:00')
+                return datetime.fromisoformat(date_str)
+            except (ValueError, TypeError, AttributeError):
+                return datetime.min
 
-    if not any(result.get('success', False) for result in results):
-        logger.error("All transcript processing attempts failed")
-        raise Exception("Failed to process any transcripts successfully")
+        sorted_transcripts = sorted(
+            transcripts,
+            key=get_date,
+            reverse=True
+        )
 
-    return results
+        # Process each transcript with rate limiting and retries
+        for transcript in sorted_transcripts:
+            try:
+                processed = process_transcript(
+                    transcript['transcript'],
+                    video_title=transcript.get('title'),
+                    video_id=transcript['video_id'],
+                    publish_date=transcript.get('publishedAt'),
+                    style=style
+                )
+                
+                results.append({
+                    'video_id': transcript['video_id'],
+                    'title': transcript.get('title', 'Unknown Title'),
+                    'channel_name': transcript.get('channel_name', 'Unknown Channel'),
+                    'publishedAt': transcript.get('publishedAt'),  # Pass raw date
+                    'formatted_text': processed.get('formatted_text', ''),
+                    'summary': processed.get('summary', ''),
+                    'tags': processed.get('tags', []),
+                    'key_points': processed.get('key_points', []),
+                    'full_transcript': transcript['transcript'],
+                    'style': style,
+                    'research_implications': processed.get('research_implications', []),
+                    'code_snippets': processed.get('code_snippets', []),
+                    'technical_concepts': processed.get('technical_concepts', []),
+                    'market_insights': processed.get('market_insights', []),
+                    'strategic_implications': processed.get('strategic_implications', []),
+                    'success': True
+                })
+            except Exception as e:
+                error_info = handle_api_error(e, transcript.get('video_id', 'unknown'))
+                logger.error(f"Error processing transcript: {error_info}")
+                results.append({
+                    'video_id': transcript.get('video_id', 'unknown'),
+                    'error': str(e),
+                    'success': False,
+                    'error_type': 'processing_error'
+                })
+                continue
+
+        if not any(result.get('success', False) for result in results):
+            logger.error("All transcript processing attempts failed")
+            raise Exception("Failed to process any transcripts successfully")
+
+        return results
+
+    except (ValueError, KeyError) as e:
+        logger.error(f"Validation error: {e}")
+        results.append({
+            'video_id': 'unknown',
+            'error': str(e),
+            'success': False,
+            'error_type': 'validation_error'
+        })
+        return results
+    except Exception as e:
+        logger.error(f"Error in batch processing: {str(e)}")
+        raise
 
 def handle_api_error(error, video_id):
     """
@@ -381,6 +386,68 @@ def format_transcript_output(processed_data):
         Video Title: Example Video
         ...
     """
+    output = []
+    
+    # Add video information
+    output.append(f"Title: {processed_data.get('title', 'Unknown Title')}")
+    output.append(f"Video ID: {processed_data.get('video_id', 'Unknown ID')}")
+    output.append(f"Channel: {processed_data.get('channel_name', 'Unknown Channel')}")
+    output.append(f"Published: {format_date(processed_data.get('publishedAt', 'Not available'))}")
+    output.append(f"Watch on YouTube: https://www.youtube.com/watch?v={processed_data.get('video_id', '')}\n")
+    
+    # Add summary section
+    output.append("Summary:")
+    output.append(processed_data.get('summary', ''))
+    output.append("\n")
+    
+    # Add key points
+    output.append("Key Points:")
+    for point in processed_data.get('key_points', []):
+        output.append(f"- {point}")
+    output.append("\n")
+    
+    # Add tags
+    output.append("Tags:")
+    for tag in processed_data.get('tags', []):
+        output.append(f"- {tag}")
+    output.append("\n")
+    
+    # Add style-specific sections
+    if 'research_implications' in processed_data:
+        output.append("Research Implications:")
+        for implication in processed_data['research_implications']:
+            output.append(f"- {implication}")
+        output.append("\n")
+    
+    if 'code_snippets' in processed_data:
+        output.append("Code Snippets:")
+        for snippet in processed_data['code_snippets']:
+            output.append(f"- {snippet}")
+        output.append("\n")
+    
+    if 'technical_concepts' in processed_data:
+        output.append("Technical Concepts:")
+        for concept in processed_data['technical_concepts']:
+            output.append(f"- {concept}")
+        output.append("\n")
+    
+    if 'market_insights' in processed_data:
+        output.append("Market Insights:")
+        for insight in processed_data['market_insights']:
+            output.append(f"- {insight}")
+        output.append("\n")
+    
+    if 'strategic_implications' in processed_data:
+        output.append("Strategic Implications:")
+        for implication in processed_data['strategic_implications']:
+            output.append(f"- {implication}")
+        output.append("\n")
+    
+    # Add full formatted transcript
+    output.append("Full Transcript:")
+    output.append(processed_data.get('formatted_text', ''))
+    
+    return "\n".join(output)
 
 def validate_input_data(transcript_data):
     """
@@ -466,3 +533,15 @@ def get_cached_results(video_id):
         ... else:
         ...     print("Need to process video")
     """
+
+def format_date(date_str):
+    """Format a date string consistently throughout the application."""
+    if not date_str or date_str == 'Not available':
+        return 'Not available'
+    try:
+        # Handle ISO format dates with Z or +00:00
+        date_str = date_str.replace('Z', '+00:00')
+        dt = datetime.fromisoformat(date_str)
+        return dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+    except (ValueError, TypeError, AttributeError):
+        return 'Not available'
