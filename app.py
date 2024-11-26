@@ -553,6 +553,12 @@ def create_error_response(message, status_code=400):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='YouTube Transcript Extractor')
     parser.add_argument('--port', type=int, default=5000, help='Port to run the application on (default: 5000)')
+    parser.add_argument('--debug', action='store_true', help='Run the application in debug mode')
     args = parser.parse_args()
     
-    app.run(host='0.0.0.0', port=args.port, debug=False)
+    if args.debug:
+        app.debug = True
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.debug("Running in debug mode")
+    
+    app.run(host='0.0.0.0', port=args.port, debug=args.debug)
