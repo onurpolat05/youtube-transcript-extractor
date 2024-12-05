@@ -321,7 +321,7 @@ def process_transcript(transcript_text, video_title=None, video_id=None, publish
 
         template = get_template(style)
         
-        model_name = os.getenv('OPENAI_MODEL', 'gpt-4o-mini-2024-07-18')
+        model_name = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
         logger.info(f"Using OpenAI model: {model_name}")
         
         # Send only the transcript text to OpenAI, keeping metadata separate
