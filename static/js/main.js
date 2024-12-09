@@ -278,15 +278,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function displayPlaylist(videos) {
         try {
-            if (!elements.playlistContainer) {
-                throw new Error('Playlist container element not found');
-            }
+            const playlistContainer = document.getElementById('playlist-container');
+            playlistContainer.innerHTML = '';
 
-            if (!Array.isArray(videos) || videos.length === 0) {
-                throw new Error('No videos found in the playlist');
-            }
+            // Sort videos by date (newest first)
+            videos.sort((a, b) => {
+                const dateA = a.publishedAt ? new Date(a.publishedAt) : new Date(0);
+                const dateB = b.publishedAt ? new Date(b.publishedAt) : new Date(0);
+                return dateB - dateA;
+            });
 
-            elements.playlistContainer.innerHTML = '';
             const videoList = document.createElement('div');
             videoList.className = 'video-list';
             
@@ -311,7 +312,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <button class="btn btn-youtube" id="download-transcripts" disabled>Download Transcripts</button>
                 </div>
             `;
-            elements.playlistContainer.appendChild(headerDiv);
+            playlistContainer.appendChild(headerDiv);
 
             // Add progress container with phases
             const progressContainer = document.createElement('div');
@@ -331,7 +332,7 @@ document.addEventListener('DOMContentLoaded', function() {
             progressContainer.appendChild(processingProgress);
             progressContainer.appendChild(mergingProgress);
             
-            elements.playlistContainer.appendChild(progressContainer);
+            playlistContainer.appendChild(progressContainer);
             
             // Add select all functionality
             const selectAllCheckbox = headerDiv.querySelector('#select-all');
@@ -349,33 +350,22 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
 
                     const videoUrl = `https://www.youtube.com/watch?v=${video.video_id}`;
+                    const publishDate = video.publishedAt ? 
+                        new Date(video.publishedAt).toLocaleDateString('tr-TR') : 
+                        'Date not available';
                     const videoItem = document.createElement('div');
-                    videoItem.className = 'video-item';
+                    videoItem.className = 'video-item mb-3';
+                    
                     videoItem.innerHTML = `
-                        <input type="checkbox" class="video-select" value="${video.video_id}">
-                        <span class="video-number">${index + 1}.</span>
-                        <div class="video-info">
-                            <div class="video-title">${video.title}</div>
-                            <div class="video-url">${videoUrl}</div>
-                            <button class="btn btn-sm btn-youtube copy-url" data-url="${videoUrl}">
-                                Copy URL
-                            </button>
+                        <div class="d-flex align-items-start">
+                            <input type="checkbox" class="video-select me-2" data-video-id="${video.video_id}">
+                            <img src="${video.thumbnail}" alt="Video thumbnail" class="me-2">
+                            <div>
+                                <div class="video-title">${video.title}</div>
+                                <div class="video-date text-muted">${publishDate}</div>
+                            </div>
                         </div>
                     `;
-
-                    // Add click handler for copy button
-                    const copyButton = videoItem.querySelector('.copy-url');
-                    copyButton.addEventListener('click', async function() {
-                        const url = this.getAttribute('data-url');
-                        const success = await copyToClipboard(url);
-                        
-                        // Give user feedback
-                        const originalText = this.textContent;
-                        this.textContent = success ? 'Copied!' : 'Failed to copy';
-                        setTimeout(() => {
-                            this.textContent = originalText;
-                        }, 2000);
-                    });
 
                     videoList.appendChild(videoItem);
                 } catch (error) {
@@ -383,8 +373,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
             
-            elements.playlistContainer.appendChild(videoList);
-            setElementDisplay(elements.playlistContainer, 'block');
+            playlistContainer.appendChild(videoList);
+            setElementDisplay(playlistContainer, 'block');
 
             let processedContent = null;
 
@@ -396,7 +386,8 @@ document.addEventListener('DOMContentLoaded', function() {
             processButton.addEventListener('click', async function() {
                 try {
                     const selectedVideos = Array.from(videoList.querySelectorAll('.video-select:checked'))
-                        .map(checkbox => checkbox.value);
+                        .map(checkbox => checkbox.getAttribute('data-video-id'))
+                        .filter(id => id); // Filter out any undefined or null values
                     
                     if (selectedVideos.length === 0) {
                         showError('Please select at least one video');

@@ -9,12 +9,16 @@ import re
 from prompt_templates import get_template
 from dotenv import load_dotenv
 from datetime import datetime
+<<<<<<< HEAD
+=======
+from typing import Dict
+>>>>>>> process-enhancing
 
 # .env dosyasını yükle
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # API anahtarını doğrudan .env'den oku ve OpenAI client'a ver
@@ -59,24 +63,28 @@ def rate_limit_decorator(min_delay=RATE_LIMIT_DELAY):
 def validate_response(input_text, response):
     """
     Validate the OpenAI API response for proper text formatting.
-    
-    This function checks whether the response from the OpenAI API contains the expected fields and that the formatted text differs from the input text. It ensures that the response meets the required structure and content integrity before further processing.
-    
-    Args:
-        input_text (str): The original transcript text that was processed.
-        response (dict): The response dictionary returned by the OpenAI API.
-    
-    Returns:
-        bool: True if the response is valid, otherwise raises an error.
-    
-    Raises:
-        ValueError: If the response is missing required fields or the formatted text remains unchanged.
     """
     if not response.get('formatted_text'):
         raise ValueError("Response missing formatted text")
     
     if response['formatted_text'] == input_text:
         raise ValueError("Formatted text unchanged from input")
+        
+    # Check for metadata in formatted text
+    metadata_patterns = [
+        r'^(?:Title|Video Title):[^\n]+\n',
+        r'^(?:Video )?ID:[^\n]+\n',
+        r'^Channel:[^\n]+\n',
+        r'^Published:[^\n]+\n',
+        r'^Transcript:\n'
+    ]
+    
+    formatted_text = response['formatted_text']
+    for pattern in metadata_patterns:
+        if re.search(pattern, formatted_text, re.MULTILINE):
+            # Clean up the metadata instead of raising an error
+            response['formatted_text'] = clean_metadata_from_text(formatted_text)
+            break
         
     # Additional validation - ensure required fields exist
     required_fields = ['summary', 'tags', 'key_points']
@@ -110,30 +118,34 @@ def clean_and_transform_response(response_text):
             cleaned_text = re.sub(r'```json\s*|\s*```', '', cleaned_text)
             # Ensure proper quote usage
             cleaned_text = cleaned_text.replace("'", '"')
+            # Try to parse cleaned JSON
             return json.loads(cleaned_text)
         except json.JSONDecodeError:
             # If still failing, extract content using regex
+            logger.warning("Falling back to regex extraction for response parsing")
             extracted = {
-                'formatted_text': extract_field(response_text, 'formatted_text'),
-                'summary': extract_field(response_text, 'summary'),
-                'tags': extract_field(response_text, 'tags', is_list=True),
-                'key_points': extract_field(response_text, 'key_points', is_list=True)
+                'formatted_text': extract_field(response_text, 'formatted_text') or '',
+                'summary': extract_field(response_text, 'summary') or '',
+                'tags': extract_field(response_text, 'tags', is_list=True) or [],
+                'key_points': extract_field(response_text, 'key_points', is_list=True) or []
             }
+            
+            # Validate extracted content
+            if not any(extracted.values()):
+                logger.error("Failed to extract any content from response")
+                raise ValueError("Failed to parse response and extract content")
+                
+            # Clean up empty or malformed entries
+            if isinstance(extracted['key_points'], list):
+                extracted['key_points'] = [point.strip() for point in extracted['key_points'] if point.strip() and point.strip() != ',']
+            if isinstance(extracted['tags'], list):
+                extracted['tags'] = [tag.strip() for tag in extracted['tags'] if tag.strip() and tag.strip() != ',']
+                
             return extracted
 
 def extract_field(text, field_name, is_list=False):
     """
     Extract field values from text using regex patterns.
-    
-    This helper function searches for a specific field within the provided text and extracts its value. It supports extraction of both single values and lists based on the 'is_list' parameter.
-    
-    Args:
-        text (str): The text to extract fields from.
-        field_name (str): The name of the field to extract.
-        is_list (bool, optional): Whether the field value is a list. Defaults to False.
-    
-    Returns:
-        str or list: The extracted field value or list of values. Returns an empty list or string if extraction fails.
     """
     if is_list:
         pattern = r'["\']?' + re.escape(field_name) + r'["\']?\s*:\s*\[(.*?)\]'
@@ -143,9 +155,147 @@ def extract_field(text, field_name, is_list=False):
             return items
         return []
     else:
+        # For formatted_text, try to extract everything after the field name until the next field
+        if field_name == 'formatted_text':
+            pattern = r'["\']?' + re.escape(field_name) + r'["\']?\s*:\s*["\']([^"]*(?:"(?:[^"]*"[^"]*)*)?)["\']'
+            match = re.search(pattern, text, re.DOTALL)
+            if match:
+                extracted_text = match.group(1)
+                # Clean metadata from the extracted text
+                return clean_metadata_from_text(extracted_text)
+        
+        # For other fields, use the standard pattern
         pattern = r'["\']?' + re.escape(field_name) + r'["\']?\s*:\s*["\']([^"\']+)["\']'
         match = re.search(pattern, text)
+        if match:
+            return match.group(1)
+            
+        # If no match, try multiline pattern
+        pattern = r'["\']?' + re.escape(field_name) + r'["\']?\s*:\s*["\']([^"\']+(?:[^"\']+)*)["\']'
+        match = re.search(pattern, text, re.DOTALL)
         return match.group(1) if match else ""
+
+def identify_sections(text: str) -> Dict[str, str]:
+    """
+    Split the response into main sections for targeted cleaning.
+    """
+    logger.debug("Starting section identification")
+    logger.debug(f"Input text length: {len(text)}")
+    
+    sections = {
+        'summary': '',
+        'tags': '',
+        'key_points': '',
+        'formatted_text': ''
+    }
+    
+    try:
+        # Extract each section using regex
+        summary_match = re.search(r'1\.\s*Summary:(.+?)(?=2\.\s*(?:Relevant\s*)?[Tt]ags:)', text, re.DOTALL)
+        tags_match = re.search(r'2\.\s*(?:Relevant\s*)?[Tt]ags:(.+?)(?=3\.\s*Key\s*[Pp]oints:)', text, re.DOTALL)
+        key_points_match = re.search(r'3\.\s*Key\s*[Pp]oints:(.+?)(?=4\.\s*Formatted\s*[Tt]ranscript:)', text, re.DOTALL)
+        formatted_text_match = re.search(r'4\.\s*Formatted\s*[Tt]ranscript:(.+?)$', text, re.DOTALL)
+        
+        if summary_match:
+            sections['summary'] = summary_match.group(1).strip()
+            logger.debug(f"Found summary section: {len(sections['summary'])} chars")
+        
+        if tags_match:
+            sections['tags'] = tags_match.group(1).strip()
+            logger.debug(f"Found tags section: {len(sections['tags'])} chars")
+        
+        if key_points_match:
+            sections['key_points'] = key_points_match.group(1).strip()
+            logger.debug(f"Found key points section: {len(sections['key_points'])} chars")
+        
+        if formatted_text_match:
+            sections['formatted_text'] = formatted_text_match.group(1).strip()
+            logger.debug(f"Found formatted text section: {len(sections['formatted_text'])} chars")
+        
+        # Log if any section is missing
+        missing_sections = [k for k, v in sections.items() if not v]
+        if missing_sections:
+            logger.warning(f"Missing sections: {', '.join(missing_sections)}")
+            
+    except Exception as e:
+        logger.error(f"Error splitting sections: {str(e)}")
+    
+    return sections
+
+def clean_transcript_content(text: str) -> str:
+    """
+    Clean only the transcript portion, preserving actual content.
+    """
+    logger.debug("Starting transcript content cleaning")
+    logger.debug(f"Original transcript length: {len(text)}")
+    
+    if not text:
+        return text
+    
+    # Remove transcript metadata but preserve content
+    patterns = [
+        (r'Transcriber:.*?\n', 'transcriber info'),
+        (r'Reviewer:.*?\n', 'reviewer info'),
+        (r'\[(?:Music|Applause)\](?:\s*\n)?', 'sound effects'),
+        (r'^\s*\[[\d:]+\]\s*', 'timestamps', re.MULTILINE),  # Remove timestamps at start of lines
+    ]
+    
+    cleaned = text
+    for pattern_tuple in patterns:
+        pattern = pattern_tuple[0]
+        pattern_name = pattern_tuple[1]
+        flags = pattern_tuple[2] if len(pattern_tuple) > 2 else 0
+        
+        before_length = len(cleaned)
+        cleaned = re.sub(pattern, '', cleaned, flags=flags)
+        after_length = len(cleaned)
+        if before_length != after_length:
+            logger.debug(f"Removed {pattern_name} metadata: {before_length - after_length} characters")
+    
+    # Clean up whitespace while preserving paragraph structure
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    cleaned = re.sub(r'^\s+', '', cleaned, flags=re.MULTILINE)  # Remove leading whitespace
+    cleaned = re.sub(r'\s+$', '', cleaned, flags=re.MULTILINE)  # Remove trailing whitespace
+    cleaned = cleaned.strip()
+    
+    return cleaned
+
+def clean_metadata_from_text(text: str) -> str:
+    """
+    Clean metadata using a structured approach with detailed logging.
+    """
+    logger.debug("Starting metadata cleaning process")
+    logger.debug(f"Original text length: {len(text)}")
+    
+    if not text:
+        logger.debug("Empty text received")
+        return text
+    
+    # Split into sections
+    sections = identify_sections(text)
+    logger.debug("Sections identified and split")
+    
+    # Clean formatted text section specifically
+    if sections['formatted_text']:
+        logger.debug("Processing formatted text section")
+        sections['formatted_text'] = clean_transcript_content(sections['formatted_text'])
+    
+    # Reconstruct the text with proper formatting
+    cleaned_text = []
+    
+    # Add each section with proper formatting
+    cleaned_text.append("1. Summary:")
+    cleaned_text.append(sections['summary'])
+    cleaned_text.append("\n2. Tags:")
+    cleaned_text.append(sections['tags'])
+    cleaned_text.append("\n3. Key Points:")
+    cleaned_text.append(sections['key_points'])
+    cleaned_text.append("\n4. Formatted Transcript:")
+    cleaned_text.append(sections['formatted_text'])
+    
+    final_text = "\n".join(cleaned_text)
+    logger.debug(f"Final cleaned text length: {len(final_text)}")
+    return final_text.strip()
 
 @rate_limit_decorator()
 @backoff.on_exception(
@@ -174,6 +324,7 @@ def process_transcript(transcript_text, video_title=None, video_id=None, publish
 
         template = get_template(style)
         
+<<<<<<< HEAD
         # Create a context string that includes video metadata
         context = ""
         if video_title:
@@ -191,6 +342,12 @@ def process_transcript(transcript_text, video_title=None, video_id=None, publish
         model_name = os.getenv('OPENAI_MODEL', 'gpt-4o-mini-2024-07-18')
         logger.info(f"Using OpenAI model: {model_name}")
         
+=======
+        model_name = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+        logger.info(f"Using OpenAI model: {model_name}")
+        
+        # Send only the transcript text to OpenAI, keeping metadata separate
+>>>>>>> process-enhancing
         response = client.chat.completions.create(
             model=model_name,
             messages=[
@@ -198,7 +355,11 @@ def process_transcript(transcript_text, video_title=None, video_id=None, publish
                     "role": "system",
                     "content": template["system_prompt"]
                 },
+<<<<<<< HEAD
                 {"role": "user", "content": full_text}
+=======
+                {"role": "user", "content": transcript_text}
+>>>>>>> process-enhancing
             ]
         )
         
@@ -207,6 +368,16 @@ def process_transcript(transcript_text, video_title=None, video_id=None, publish
         
         # Validate the response
         validate_response(transcript_text, processed_response)
+        
+        # Add metadata to the response after processing
+        if video_title:
+            processed_response['title'] = video_title
+        if video_id:
+            processed_response['video_id'] = video_id
+        if publish_date:
+            processed_response['publishedAt'] = publish_date
+        if style:
+            processed_response['style'] = style
         
         return processed_response
     except Exception as e:
@@ -331,6 +502,7 @@ def handle_api_error(error, video_id):
         ...     error_info = handle_api_error(e, "abc123")
         ...     print(f"Error type: {error_info['error_type']}")
     """
+    # Implement error handling logic here
 
 def update_progress(video_id, progress_value):
     """
@@ -356,54 +528,57 @@ def update_progress(video_id, progress_value):
         >>> update_progress("abc123", 25)  # Transcript downloaded
         >>> update_progress("abc123", -1)  # Error occurred
     """
+    # Implement progress update logic here
 
 def format_transcript_output(processed_data):
     """
     Format the processed transcript data into a readable text format.
-    
-    Takes the raw processed data and creates a well-structured text document
-    that's easy to read and understand. This is the final step before
-    saving or displaying the results.
-    
-    The formatted output includes:
-    1. Video information (title, ID)
-    2. Summary section
-    3. Key points in bullet format
-    4. Tags section
-    5. Style-specific sections (e.g., code snippets, research notes)
-    6. Full formatted transcript
-    
-    Args:
-        processed_data (dict): The processed transcript data containing all analysis
-    
-    Returns:
-        str: A nicely formatted text document ready for saving or display
-    
-    Example:
-        >>> data = process_transcript(raw_text)
-        >>> formatted = format_transcript_output(data)
-        >>> print(formatted)
-        Video Title: Example Video
-        ...
     """
     output = []
     
+<<<<<<< HEAD
     # Add video information
     output.append(f"Title: {processed_data.get('title', 'Unknown Title')}")
     output.append(f"Video ID: {processed_data.get('video_id', 'Unknown ID')}")
     output.append(f"Channel: {processed_data.get('channel_name', 'Unknown Channel')}")
     output.append(f"Published: {format_date(processed_data.get('publishedAt', 'Not available'))}")
     output.append(f"Watch on YouTube: https://www.youtube.com/watch?v={processed_data.get('video_id', '')}\n")
+=======
+    # Add header separator
+    output.append("=" * 80)
+    output.append("")
+    
+    # Add video information
+    if 'title' in processed_data:
+        output.append(f"Video Title: {processed_data['title']}")
+    if 'video_id' in processed_data:
+        output.append(f"Video ID: {processed_data['video_id']}")
+    if 'style' in processed_data:
+        output.append(f"Processing Style: {processed_data['style']}")
+    output.append("-" * 80)
+>>>>>>> process-enhancing
     
     # Add summary section
     output.append("Summary:")
     output.append(processed_data.get('summary', ''))
+<<<<<<< HEAD
     output.append("\n")
+=======
+    output.append("")
+    
+    # Add tags
+    output.append("Tags:")
+    tags = processed_data.get('tags', [])
+    if tags:
+        output.append(", ".join(tags))
+    output.append("")
+>>>>>>> process-enhancing
     
     # Add key points
     output.append("Key Points:")
     for point in processed_data.get('key_points', []):
         output.append(f"- {point}")
+<<<<<<< HEAD
     output.append("\n")
     
     # Add tags
@@ -446,6 +621,17 @@ def format_transcript_output(processed_data):
     # Add full formatted transcript
     output.append("Full Transcript:")
     output.append(processed_data.get('formatted_text', ''))
+=======
+    output.append("")
+    
+    # Add formatted transcript
+    output.append("Formatted Text:")
+    output.append(processed_data.get('formatted_text', ''))
+    output.append("")
+    
+    # Add footer separator
+    output.append("=" * 80)
+>>>>>>> process-enhancing
     
     return "\n".join(output)
 
@@ -481,6 +667,7 @@ def validate_input_data(transcript_data):
         ... except ValueError as e:
         ...     print(f"Invalid data: {e}")
     """
+    # Implement input validation logic here
 
 def cache_results(video_id, processed_data):
     """
@@ -509,6 +696,7 @@ def cache_results(video_id, processed_data):
         >>> cache_results("abc123", results)
         True
     """
+    # Implement caching logic here
 
 def get_cached_results(video_id):
     """
@@ -533,6 +721,10 @@ def get_cached_results(video_id):
         ... else:
         ...     print("Need to process video")
     """
+<<<<<<< HEAD
+=======
+    # Implement cache retrieval logic here
+>>>>>>> process-enhancing
 
 def format_date(date_str):
     """Format a date string consistently throughout the application."""

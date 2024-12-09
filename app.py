@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify, make_response
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 from youtube_transcript_api.formatters import TextFormatter
 import re
 import os
@@ -17,11 +18,11 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from functools import lru_cache
 import backoff
-from transcript_processor import batch_process_transcripts
+from transcript_processor import (process_transcript, batch_process_transcripts,
+                              update_progress, format_date)
 from dotenv import load_dotenv
 import argparse
 
-# Load .env file
 load_dotenv()
 
 # Configure logging
@@ -153,8 +154,9 @@ def fetch_playlist_videos(playlist_id):
             
             logger.info(f"Fetching page of playlist items. Token: {next_page_token}")
             try:
+                # First get playlist items
                 playlist_response = youtube.playlistItems().list(
-                    part='snippet',
+                    part='snippet,contentDetails',
                     playlistId=playlist_id,
                     maxResults=50,
                     pageToken=next_page_token
@@ -163,13 +165,34 @@ def fetch_playlist_videos(playlist_id):
                 if 'items' not in playlist_response:
                     raise ValueError("Invalid playlist data received from YouTube")
 
+                # Get video IDs for detailed info
+                video_ids = [item['snippet']['resourceId']['videoId'] 
+                           for item in playlist_response['items']]
+
+                # Get detailed video information
+                if video_ids:
+                    videos_response = youtube.videos().list(
+                        part='snippet',
+                        id=','.join(video_ids)
+                    ).execute()
+
+                    # Create a mapping of video IDs to their details
+                    video_details = {
+                        item['id']: item['snippet'] 
+                        for item in videos_response.get('items', [])
+                    }
+
                 for item in playlist_response['items']:
                     try:
                         snippet = item['snippet']
+                        video_id = snippet['resourceId']['videoId']
+                        video_detail = video_details.get(video_id, {})
+                        
                         video_data = {
                             'title': snippet['title'],
-                            'video_id': snippet['resourceId']['videoId'],
-                            'thumbnail': snippet['thumbnails']['default']['url']
+                            'video_id': video_id,
+                            'thumbnail': snippet['thumbnails']['default']['url'],
+                            'publishedAt': video_detail.get('publishedAt', snippet['publishedAt'])
                         }
                         videos.append(video_data)
                         items_fetched += 1
@@ -325,32 +348,41 @@ def download_transcript_batch_route():
                 youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
                 video_response = youtube.videos().list(
                     part='snippet',
-                    id=video_id,
-                    fields='items(snippet(title))'
+                    id=video_id
                 ).execute()
-                
-                video_title = video_response['items'][0]['snippet']['title']
+
+                if not video_response.get('items'):
+                    raise ValueError(f"Video {video_id} not found or is not accessible")
+
+                video_data = video_response['items'][0]['snippet']
+                publish_date = video_data.get('publishedAt')  # Get raw date
+                title = video_data['title']
+                channel_name = video_data.get('channelTitle', 'Unknown Channel')
                 
                 logger.info(f"Fetching transcript for video: {video_id}")
                 transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
                 formatter = TextFormatter()
-                formatted_transcript = formatter.format_transcript(transcript_list)
+                transcript_text = formatter.format_transcript(transcript_list)
                 
-                transcripts.append({
+                transcript_data = {
                     'video_id': video_id,
-                    'title': video_title,
-                    'transcript': formatted_transcript
-                })
+                    'title': title,
+                    'channel_name': channel_name,
+                    'publishedAt': publish_date,
+                    'transcript': transcript_text
+                }
+                
+                transcripts.append(transcript_data)
                 
                 with progress_lock:
                     download_progress[video_id] = 50  # 50% after transcript download
                     
-            except YouTubeTranscriptApi.TranscriptsDisabled:
+            except TranscriptsDisabled:
                 logger.error(f"Transcripts are disabled for video {video_id}")
                 with progress_lock:
                     download_progress[video_id] = -1
                 continue
-            except YouTubeTranscriptApi.NoTranscriptFound:
+            except NoTranscriptFound:
                 logger.error(f"No transcript found for video {video_id}")
                 with progress_lock:
                     download_progress[video_id] = -1
@@ -382,6 +414,8 @@ def download_transcript_batch_route():
                     output.extend([
                         f"Video Title: {result['title']}",
                         f"Video ID: {result['video_id']}",
+                        f"Channel Name: {result['channel_name']}",
+                        f"Published At: {format_date(result.get('publishedAt', 'Not available'))}",
                         f"Processing Style: {result['style']}",
                         "-" * 80,
                         "Summary:",
@@ -519,6 +553,12 @@ def create_error_response(message, status_code=400):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='YouTube Transcript Extractor')
     parser.add_argument('--port', type=int, default=5000, help='Port to run the application on (default: 5000)')
+    parser.add_argument('--debug', action='store_true', help='Run the application in debug mode')
     args = parser.parse_args()
     
-    app.run(host='0.0.0.0', port=args.port, debug=False)
+    if args.debug:
+        app.debug = True
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.debug("Running in debug mode")
+    
+    app.run(host='0.0.0.0', port=args.port, debug=args.debug)
