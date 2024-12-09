@@ -6,13 +6,11 @@ import logging
 from functools import wraps
 import backoff
 import re
+import httpx
 from prompt_templates import get_template
 from dotenv import load_dotenv
 from datetime import datetime
-<<<<<<< HEAD
-=======
-from typing import Dict
->>>>>>> process-enhancing
+from typing import Dict  # Add this line
 
 # .env dosyasını yükle
 load_dotenv()
@@ -305,26 +303,12 @@ def clean_metadata_from_text(text: str) -> str:
     giveup=lambda e: isinstance(e, KeyError)
 )
 def process_transcript(transcript_text, video_title=None, video_id=None, publish_date=None, style="default"):
-    """
-    Process a video transcript using OpenAI's API.
-    
-    Args:
-        transcript_text (str): The transcript text to process
-        video_title (str, optional): The title of the video
-        video_id (str, optional): The ID of the video
-        publish_date (str, optional): The publish date of the video
-        style (str, optional): The processing style to use. Defaults to "default"
-    
-    Returns:
-        dict: Processed transcript data including formatted text, summary, and analysis
-    """
     try:
         if not transcript_text or not transcript_text.strip():
             raise ValueError("Invalid transcript text provided")
 
         template = get_template(style)
         
-<<<<<<< HEAD
         # Create a context string that includes video metadata
         context = ""
         if video_title:
@@ -342,24 +326,14 @@ def process_transcript(transcript_text, video_title=None, video_id=None, publish
         model_name = os.getenv('OPENAI_MODEL', 'gpt-4o-mini-2024-07-18')
         logger.info(f"Using OpenAI model: {model_name}")
         
-=======
-        model_name = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
-        logger.info(f"Using OpenAI model: {model_name}")
-        
-        # Send only the transcript text to OpenAI, keeping metadata separate
->>>>>>> process-enhancing
         response = client.chat.completions.create(
             model=model_name,
             messages=[
-                {
+               {
                     "role": "system",
                     "content": template["system_prompt"]
                 },
-<<<<<<< HEAD
-                {"role": "user", "content": full_text}
-=======
-                {"role": "user", "content": transcript_text}
->>>>>>> process-enhancing
+                  {"role": "user", "content": transcript_text}
             ]
         )
         
@@ -381,8 +355,13 @@ def process_transcript(transcript_text, video_title=None, video_id=None, publish
         
         return processed_response
     except Exception as e:
-        logger.error(f"Failed to process transcript: {e}")
-        raise Exception(f"Failed to process transcript: {str(e)}")
+        logger.error(f"Failed to process transcript for video {video_id}: {e}")
+        return {
+            'video_id': video_id,
+            'error': str(e),
+            'success': False,
+            'error_type': 'processing_error'
+        }
 
 def batch_process_transcripts(transcripts, style="default"):
     """Process multiple transcripts in batch."""
@@ -391,10 +370,24 @@ def batch_process_transcripts(transcripts, style="default"):
         # Input validation
         for transcript in transcripts:
             if not isinstance(transcript, dict):
-                raise TypeError(f"Invalid transcript format for {transcript}")
+                logger.error(f"Invalid transcript format for {transcript}")
+                results.append({
+                    'video_id': transcript.get('video_id', 'unknown'),
+                    'error': 'Invalid transcript format',
+                    'success': False,
+                    'error_type': 'validation_error'
+                })
+                continue
             
             if 'transcript' not in transcript or 'video_id' not in transcript:
-                raise KeyError(f"Missing required fields for video {transcript.get('video_id', 'unknown')}")
+                logger.error(f"Missing required fields for video {transcript.get('video_id', 'unknown')}")
+                results.append({
+                    'video_id': transcript.get('video_id', 'unknown'),
+                    'error': 'Missing required fields',
+                    'success': False,
+                    'error_type': 'validation_error'
+                })
+                continue
 
         # Sort transcripts by date (newest first), handling None values and invalid dates
         def get_date(transcript):
@@ -444,7 +437,7 @@ def batch_process_transcripts(transcripts, style="default"):
                 })
             except Exception as e:
                 error_info = handle_api_error(e, transcript.get('video_id', 'unknown'))
-                logger.error(f"Error processing transcript: {error_info}")
+                logger.error(f"Error processing transcript for video {transcript.get('video_id', 'unknown')}: {error_info}")
                 results.append({
                     'video_id': transcript.get('video_id', 'unknown'),
                     'error': str(e),
@@ -453,57 +446,48 @@ def batch_process_transcripts(transcripts, style="default"):
                 })
                 continue
 
-        if not any(result.get('success', False) for result in results):
-            logger.error("All transcript processing attempts failed")
-            raise Exception("Failed to process any transcripts successfully")
-
         return results
 
-    except (ValueError, KeyError) as e:
-        logger.error(f"Validation error: {e}")
-        results.append({
-            'video_id': 'unknown',
-            'error': str(e),
-            'success': False,
-            'error_type': 'validation_error'
-        })
-        return results
     except Exception as e:
         logger.error(f"Error in batch processing: {str(e)}")
         raise
 
 def handle_api_error(error, video_id):
-    """
-    Handle errors that occur during API calls to OpenAI.
-    
-    This function processes different types of API errors and creates appropriate error messages.
-    It helps maintain consistent error handling across the application.
-    
-    Common errors handled:
-    1. Rate limiting errors (too many requests)
-    2. Authentication errors (invalid API key)
-    3. Context length errors (transcript too long)
-    4. Timeout errors (API taking too long)
-    
-    Args:
-        error (Exception): The error that occurred during the API call
-        video_id (str): ID of the video being processed when error occurred
-    
-    Returns:
-        dict: Error information containing:
-            - error_type: Classification of the error
-            - message: Human-readable error message
-            - video_id: The affected video ID
-    
-    Example:
-        >>> try:
-        ...     process_video()
-        ... except Exception as e:
-        ...     error_info = handle_api_error(e, "abc123")
-        ...     print(f"Error type: {error_info['error_type']}")
-    """
-    # Implement error handling logic here
-
+    try:
+        # Implement error handling logic here
+        error_type = "unknown_error"
+        message = str(error)
+        
+        if isinstance(error, httpx.HTTPStatusError):
+            if error.response.status_code == 401:
+                error_type = "authentication_error"
+                message = "Invalid API key"
+            elif error.response.status_code == 403:
+                error_type = "permission_error"
+                message = "Access forbidden"
+            elif error.response.status_code == 404:
+                error_type = "not_found_error"
+                message = "Resource not found"
+            elif error.response.status_code == 429:
+                error_type = "rate_limit_error"
+                message = "Rate limit exceeded"
+            elif error.response.status_code >= 500:
+                error_type = "server_error"
+                message = "Server error"
+        
+        logger.error(f"API error for video {video_id}: {message}")
+        return {
+            'error_type': error_type,
+            'message': message,
+            'video_id': video_id
+        }
+    except Exception as e:
+        logger.error(f"Failed to handle API error for video {video_id}: {e}")
+        return {
+            'error_type': 'error_handling_failure',
+            'message': str(e),
+            'video_id': video_id
+        }
 def update_progress(video_id, progress_value):
     """
     Update the processing progress for a specific video.
@@ -536,49 +520,22 @@ def format_transcript_output(processed_data):
     """
     output = []
     
-<<<<<<< HEAD
     # Add video information
     output.append(f"Title: {processed_data.get('title', 'Unknown Title')}")
     output.append(f"Video ID: {processed_data.get('video_id', 'Unknown ID')}")
     output.append(f"Channel: {processed_data.get('channel_name', 'Unknown Channel')}")
     output.append(f"Published: {format_date(processed_data.get('publishedAt', 'Not available'))}")
     output.append(f"Watch on YouTube: https://www.youtube.com/watch?v={processed_data.get('video_id', '')}\n")
-=======
-    # Add header separator
-    output.append("=" * 80)
-    output.append("")
-    
-    # Add video information
-    if 'title' in processed_data:
-        output.append(f"Video Title: {processed_data['title']}")
-    if 'video_id' in processed_data:
-        output.append(f"Video ID: {processed_data['video_id']}")
-    if 'style' in processed_data:
-        output.append(f"Processing Style: {processed_data['style']}")
-    output.append("-" * 80)
->>>>>>> process-enhancing
     
     # Add summary section
     output.append("Summary:")
     output.append(processed_data.get('summary', ''))
-<<<<<<< HEAD
     output.append("\n")
-=======
-    output.append("")
-    
-    # Add tags
-    output.append("Tags:")
-    tags = processed_data.get('tags', [])
-    if tags:
-        output.append(", ".join(tags))
-    output.append("")
->>>>>>> process-enhancing
     
     # Add key points
     output.append("Key Points:")
     for point in processed_data.get('key_points', []):
         output.append(f"- {point}")
-<<<<<<< HEAD
     output.append("\n")
     
     # Add tags
@@ -621,17 +578,6 @@ def format_transcript_output(processed_data):
     # Add full formatted transcript
     output.append("Full Transcript:")
     output.append(processed_data.get('formatted_text', ''))
-=======
-    output.append("")
-    
-    # Add formatted transcript
-    output.append("Formatted Text:")
-    output.append(processed_data.get('formatted_text', ''))
-    output.append("")
-    
-    # Add footer separator
-    output.append("=" * 80)
->>>>>>> process-enhancing
     
     return "\n".join(output)
 
@@ -721,10 +667,6 @@ def get_cached_results(video_id):
         ... else:
         ...     print("Need to process video")
     """
-<<<<<<< HEAD
-=======
-    # Implement cache retrieval logic here
->>>>>>> process-enhancing
 
 def format_date(date_str):
     """Format a date string consistently throughout the application."""
@@ -737,3 +679,5 @@ def format_date(date_str):
         return dt.strftime('%Y-%m-%d %H:%M:%S UTC')
     except (ValueError, TypeError, AttributeError):
         return 'Not available'
+
+

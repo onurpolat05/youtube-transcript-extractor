@@ -136,6 +136,8 @@ openai_credentials.json
 *_summary.txt
 *_analysis.txt
 transcript_*.txt
+.cursorrules
+
 # Large files
 *.log
 *.db

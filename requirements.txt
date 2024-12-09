@@ -19,6 +19,7 @@ google-api-python-client
 backoff
 openai
 python-dotenv
+httpx
 
 # Development dependencies
 pytest
