@@ -16,8 +16,19 @@ from typing import Dict  # Add this line
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Create a file handler
+file_handler = logging.FileHandler('app.log')
+file_handler.setLevel(logging.DEBUG)
+
+# Create a logging format
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+
+# Add the file handler to the logger
+logger.addHandler(file_handler)
 
 # API anahtarını doğrudan .env'den oku ve OpenAI client'a ver
 client = OpenAI(
@@ -50,6 +61,7 @@ def rate_limit_decorator(min_delay=RATE_LIMIT_DELAY):
             sleep_time = min_delay - (current_time - last_time)
             
             if sleep_time > 0:
+                logger.debug(f"Rate limiting: sleeping for {sleep_time} seconds")
                 time.sleep(sleep_time)
             
             result = func(*args, **kwargs)
@@ -62,10 +74,13 @@ def validate_response(input_text, response):
     """
     Validate the OpenAI API response for proper text formatting.
     """
+    logger.debug("Validating response")
     if not response.get('formatted_text'):
+        logger.error("Response missing formatted text")
         raise ValueError("Response missing formatted text")
     
     if response['formatted_text'] == input_text:
+        logger.error("Formatted text unchanged from input")
         raise ValueError("Formatted text unchanged from input")
         
     # Check for metadata in formatted text
@@ -80,7 +95,7 @@ def validate_response(input_text, response):
     formatted_text = response['formatted_text']
     for pattern in metadata_patterns:
         if re.search(pattern, formatted_text, re.MULTILINE):
-            # Clean up the metadata instead of raising an error
+            logger.debug("Cleaning metadata from formatted text")
             response['formatted_text'] = clean_metadata_from_text(formatted_text)
             break
         
@@ -88,6 +103,7 @@ def validate_response(input_text, response):
     required_fields = ['summary', 'tags', 'key_points']
     missing_fields = [field for field in required_fields if not response.get(field)]
     if missing_fields:
+        logger.error(f"Response missing required fields: {', '.join(missing_fields)}")
         raise ValueError(f"Response missing required fields: {', '.join(missing_fields)}")
     
     return True
@@ -104,6 +120,7 @@ def clean_and_transform_response(response_text):
     Returns:
         dict: The cleaned and structured response data containing fields like 'formatted_text', 'summary', 'tags', and 'key_points'.
     """
+    logger.debug("Cleaning and transforming response")
     try:
         # First try direct JSON parsing
         return json.loads(response_text)
@@ -145,6 +162,7 @@ def extract_field(text, field_name, is_list=False):
     """
     Extract field values from text using regex patterns.
     """
+    logger.debug(f"Extracting field: {field_name}")
     if is_list:
         pattern = r'["\']?' + re.escape(field_name) + r'["\']?\s*:\s*\[(.*?)\]'
         match = re.search(pattern, text, re.DOTALL)
@@ -177,9 +195,7 @@ def identify_sections(text: str) -> Dict[str, str]:
     """
     Split the response into main sections for targeted cleaning.
     """
-    logger.debug("Starting section identification")
-    logger.debug(f"Input text length: {len(text)}")
-    
+    logger.debug("Identifying sections in text")
     sections = {
         'summary': '',
         'tags': '',
@@ -224,9 +240,7 @@ def clean_transcript_content(text: str) -> str:
     """
     Clean only the transcript portion, preserving actual content.
     """
-    logger.debug("Starting transcript content cleaning")
-    logger.debug(f"Original transcript length: {len(text)}")
-    
+    logger.debug("Cleaning transcript content")
     if not text:
         return text
     
@@ -262,9 +276,7 @@ def clean_metadata_from_text(text: str) -> str:
     """
     Clean metadata using a structured approach with detailed logging.
     """
-    logger.debug("Starting metadata cleaning process")
-    logger.debug(f"Original text length: {len(text)}")
-    
+    logger.debug("Cleaning metadata from text")
     if not text:
         logger.debug("Empty text received")
         return text
@@ -303,6 +315,7 @@ def clean_metadata_from_text(text: str) -> str:
     giveup=lambda e: isinstance(e, KeyError)
 )
 def process_transcript(transcript_text, video_title=None, video_id=None, publish_date=None, style="default"):
+    logger.info(f"Processing transcript for video {video_id}")
     try:
         if not transcript_text or not transcript_text.strip():
             raise ValueError("Invalid transcript text provided")
@@ -353,6 +366,7 @@ def process_transcript(transcript_text, video_title=None, video_id=None, publish
         if style:
             processed_response['style'] = style
         
+        logger.info(f"Successfully processed transcript for video {video_id}")
         return processed_response
     except Exception as e:
         logger.error(f"Failed to process transcript for video {video_id}: {e}")
@@ -365,6 +379,7 @@ def process_transcript(transcript_text, video_title=None, video_id=None, publish
 
 def batch_process_transcripts(transcripts, style="default"):
     """Process multiple transcripts in batch."""
+    logger.info("Starting batch processing of transcripts")
     results = []
     try:
         # Input validation
@@ -446,6 +461,7 @@ def batch_process_transcripts(transcripts, style="default"):
                 })
                 continue
 
+        logger.info("Batch processing completed")
         return results
 
     except Exception as e:
